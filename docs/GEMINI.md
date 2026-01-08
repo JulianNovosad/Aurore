@@ -1,14 +1,9 @@
+# Fused Embedded Systems & Robotics Engineering Doctrine
 
----
+**Defense, Aerospace, and Critical Infrastructure Programs | Raspberry Pi Robotics Production Framework**
 
-# GEMINI.md
-
-## Embedded Systems Engineering Doctrine & Cognitive Operating Model
-
-**Defense, Aerospace, and Critical Infrastructure Programs**
-
-**Status:** Normative
-**Audience:** AI coding, reasoning, and architecture agents
+**Status:** Normative  
+**Audience:** AI coding, reasoning, and architecture agents | Professional robotics / embedded systems teams  
 **Priority:** Absolute — overrides stylistic, performance, or convenience preferences
 
 ---
@@ -60,6 +55,8 @@ This doctrine applies to all software running on:
 * Safety-critical, mission-critical, or actuation-capable systems
 
 Regardless of language, framework, or operating system.
+
+**Primary Implementation Domain:** Raspberry Pi-class devices as production robotics deployment targets.
 
 ---
 
@@ -225,6 +222,11 @@ Use of wall-clock time in logic is a **fatal violation**.
 * Soft and hard timing gates
 * Exceeding limits triggers safe behavior
 * Dropped data must not affect future state
+
+**Raspberry Pi Production Timing Assumptions:**
+* All behavior must be deterministic, observable, testable, and reproducible
+* The Raspberry Pi is a **deployment target**, not a development machine
+* Tooling, layout, and pipeline must scale from one robot to thousands
 
 ---
 
@@ -404,5 +406,365 @@ When in doubt, choose the option that is:
 
 The agent is **not a helper**.
 The agent is **a system-integrity guardian**.
+
+---
+
+## 21. Raspberry Pi Robotics Production Framework Implementation
+
+**Audience:** Professional robotics / embedded systems teams
+
+**Goal:** Deterministic, production-grade robotics software for Raspberry Pi-class devices
+
+**Philosophy:**
+
+* The Raspberry Pi is a **deployment target**, not a development machine
+* All behavior must be deterministic, observable, testable, and reproducible
+* Tooling, layout, and pipeline must scale from one robot to thousands
+
+---
+
+### 21.0 High-Level Mental Model
+
+```
+Developer Workstation (x86_64)
+        │
+        ├── Write code
+        ├── Run unit tests
+        ├── Static analysis
+        ├── Cross-compile (ARM)
+        ├── Package artifacts
+        │
+        ▼
+CI System (optional but recommended)
+        │
+        ├── Rebuild from clean state
+        ├── Run full test suite
+        ├── Produce signed artifacts
+        │
+        ▼
+Raspberry Pi (aarch64)
+        │
+        ├── Install artifacts
+        ├── Run services
+        ├── Emit telemetry
+        └── Execute real-time workloads
+```
+
+---
+
+### 21.1 Repository Layout (Single Source of Truth)
+
+```
+robotics-platform/
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── TIMING.md
+│   ├── SAFETY.md
+│   ├── DEPLOYMENT.md
+│   └── HARDWARE.md
+│
+├── toolchains/
+│   ├── aarch64-linux-gnu.cmake
+│   └── clang-aarch64.cmake
+│
+├── third_party/
+│   ├── eigen/
+│   ├── flatbuffers/
+│   └── vendor_libs/
+│
+├── src/
+│   ├── common/
+│   │   ├── logging/
+│   │   ├── telemetry/
+│   │   ├── time/
+│   │   ├── threading/
+│   │   └── utils/
+│   │
+│   ├── hal/
+│   │   ├── gpio/
+│   │   ├── i2c/
+│   │   ├── spi/
+│   │   ├── uart/
+│   │   ├── camera/
+│   │   └── tpu/
+│   │
+│   ├── drivers/
+│   │   ├── motor/
+│   │   ├── servo/
+│   │   ├── imu/
+│   │   └── sensors/
+│   │
+│   ├── perception/
+│   │   ├── vision/
+│   │   ├── inference/
+│   │   └── tracking/
+│   │
+│   ├── control/
+│   │   ├── state_estimation/
+│   │   ├── planners/
+│   │   └── controllers/
+│   │
+│   ├── system/
+│   │   ├── scheduler/
+│   │   ├── watchdog/
+│   │   ├── health/
+│   │   └── lifecycle/
+│   │
+│   └── apps/
+│       ├── robotd/
+│       ├── diagnostics/
+│       └── calibration/
+│
+├── tests/
+│   ├── unit/
+│   ├── integration/
+│   └── hil/
+│
+├── packaging/
+│   ├── debian/
+│   ├── systemd/
+│   └── config/
+│
+├── scripts/
+│   ├── build.sh
+│   ├── deploy.sh
+│   ├── flash_image.sh
+│   └── run_hil_tests.sh
+│
+├── CMakeLists.txt
+├── VERSION
+└── README.md
+```
+
+---
+
+### 21.2 Code Layering Rules (Non-Negotiable)
+
+#### Dependency Direction (Only Downwards)
+
+```
+apps
+ ↓
+system
+ ↓
+control / perception
+ ↓
+drivers
+ ↓
+hal
+ ↓
+common
+```
+
+Rules:
+
+* HAL **never** depends on drivers
+* Drivers **never** contain logic
+* Control code **never** touches hardware directly
+* No circular dependencies
+* No hidden global state
+
+---
+
+### 21.3 Hardware Abstraction Layer (HAL)
+
+**Purpose:** Isolate Linux + Raspberry Pi specifics
+
+Characteristics:
+
+* Thin
+* Explicit
+* Zero allocation in hot paths
+* No retries, no policy
+
+Examples:
+
+* GPIO read/write
+* DMA buffer access
+* Camera frame dequeue
+* TPU invoke
+
+HAL is the **only layer** allowed to:
+
+* Include Linux headers
+* Use ioctl
+* Touch /dev
+
+---
+
+### 21.4 Drivers
+
+**Purpose:** Device-specific logic
+
+Characteristics:
+
+* Stateless or minimally stateful
+* Deterministic execution time
+* No threading
+
+Examples:
+
+* Servo PWM mapping
+* IMU register parsing
+* Motor command scaling
+
+Drivers translate **raw hardware behavior** into **normalized signals**.
+
+---
+
+### 21.5 Perception & Control
+
+#### Perception
+
+* Owns buffers
+* Explicit memory reuse
+* No blocking I/O
+* TPU inference isolated
+
+#### Control
+
+* Fixed update rates
+* No dynamic allocation
+* All math bounded
+* Explicit saturation and limits
+
+---
+
+### 21.6 System Layer
+
+**Purpose:** Glue and governance
+
+Components:
+
+* Scheduler
+* Watchdog
+* Health monitoring
+* Lifecycle management
+
+Scheduler:
+
+* Time-triggered
+* Priority-based
+* No ad-hoc threads
+
+---
+
+### 21.7 Applications
+
+Examples:
+
+* `robotd` – main runtime
+* `diagnostics` – maintenance mode
+* `calibration` – factory tooling
+
+Applications:
+
+* Contain zero hardware logic
+* Only orchestrate subsystems
+
+---
+
+### 21.8 Build System
+
+#### Cross-Compilation
+
+* All builds happen on x86_64
+* Toolchain file defines target
+* Pi never compiles production code
+
+Artifacts:
+
+* ELF binaries
+* Shared libraries
+* Debug symbols (separate)
+
+---
+
+### 21.9 Testing Strategy
+
+#### Unit Tests
+
+* Run on x86
+* Mock HAL
+
+#### Integration Tests
+
+* Run on x86
+* Real logic, fake hardware
+
+#### HIL Tests
+
+* Run on real Pi
+* Controlled inputs
+* Logged outputs
+
+---
+
+### 21.10 Deployment
+
+#### Artifact-Based Deployment
+
+Options:
+
+* SCP / rsync
+* Internal APT repo
+* Immutable image
+
+Never:
+
+* Edit code on the Pi
+* Install random packages
+
+---
+
+### 21.11 Runtime Model on the Pi
+
+* Read-only rootfs (recommended)
+* Systemd-managed services
+* Explicit CPU affinity
+* Real-time priorities if needed
+
+---
+
+### 21.12 Telemetry & Observability
+
+Every subsystem emits:
+
+* Timestamps
+* Execution duration
+* Queue depth
+* Error counters
+
+Logs are:
+
+* Structured
+* Binary or JSON
+* Rate-limited
+
+---
+
+### 21.13 Failure Model
+
+Assumptions:
+
+* Hardware will fail
+* Software will fault
+* Power will drop
+
+Responses:
+
+* Fail safe
+* Restart subsystems
+* Preserve logs
+
+---
+
+### 21.14 What This Explicitly Avoids
+
+* Ad-hoc scripting
+* SSH debugging in production
+* ROS magic
+* Implicit threading
+* Undefined timing behavior
 
 ---
